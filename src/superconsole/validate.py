@@ -29,31 +29,33 @@ def _count_files(root: Path, exts: set[str] | None = None) -> int:
 
 def validate_or_raise() -> ValidationResult:
     if not DATA_DIR.exists():
-        raise RuntimeError(f"Data directory does not exist: {DATA_DIR}")
+        raise RuntimeError(f"Missing data directory: {DATA_DIR}")
 
     required = {
         "roms": ROMS_DIR,
         "images": IMAGES_DIR,
         "bios": BIOS_DIR,
         "emulators": EMULATORS_DIR,
-        "videos": VIDEOS_DIR,   
+        "videos": VIDEOS_DIR,
     }
 
     problems: list[str] = []
 
     for name, path in required.items():
         if not path.exists():
-            problems.append(f"Required directory '{name}' does not exist at path: {path}")
+            problems.append(f"- Missing: data/{name} (expected at {path})")
             continue
+
         if not is_symlink(path):
-            log.warning(f"Directory '{name}' at path {path} is not a symlink, That is OK if intentional")
+            log.warning("data/%s is not a symlink (OK if intentional): %s", name, path)
+
     if problems:
-        msg = "Validation failed with the following problems:\n" + "\n".join(problems)
+        msg = "Project data validation failed:\n" + "\n".join(problems)
         raise RuntimeError(msg)
 
-    rom_count = _count_files(ROMS_DIR, exts = {".zip", ".7z", ".iso", ".wbfs", ".rvz", ".nsp", ".xci", ".nes", ".sfc", ".smc", ".n64", ".z64", ".v64", ".gba", ".gb", ".gbc"})
-    log.info(f"Found {rom_count} ROM files in {ROMS_DIR}")
+    # IMPORTANT: do NOT scan ROMs here. That happens asynchronously after the UI starts.
+    log.info("Validation OK (skipping ROM count at startup).")
+    return ValidationResult(rom_count=0)
 
-    return ValidationResult(rom_count=rom_count)
 
 

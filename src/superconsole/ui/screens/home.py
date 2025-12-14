@@ -30,6 +30,10 @@ class HomeScreen(Screen):
         self.state.bind(rom_count=self._on_rom_count)
         self.state.bind(status_text=self._on_status)
 
+        scan_btn = Button(text="Rescan ROMs", size_hint_y=None, height=48)
+        scan_btn.bind(on_press=lambda *_: self.manager.app._start_rom_scan())
+        root.add_widget(scan_btn)
+
     def _on_rom_count(self, *_):
         self.roms.text = f"ROMs found: {self.state.rom_count}"
 
