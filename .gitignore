@@ -1,0 +1,37 @@
+# ---- Python / Poetry ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Poetry virtualenv (if in-project)
+.venv/
+
+# ---- OS / Editor ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ---- Logs / runtime ----
+*.log
+logs/
+*.sqlite3
+
+# ---- Local config (keep example configs committed) ----
+config/*.toml
+!config/*.example.toml
+
+# ---- Emulation data ----
+# Track the symlinks themselves, ignore any real files if present
+data/*
+!data/.gitkeep
+!data/roms
+!data/images
+!data/videos
+!data/bios
+!data/emulators
+
