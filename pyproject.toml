@@ -4,6 +4,8 @@ version = "0.1.0"
 description = ""
 authors = ["phippsammon <phippsammon175@gmail.com>"]
 readme = "README.md"
+packages = [{ include = "superconsole", from = "src" }]
+
 
 [tool.poetry.dependencies]
 python = "^3.12"
@@ -13,3 +15,6 @@ kivy = "^2.3.1"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+superconsole = "superconsole.main:main"
