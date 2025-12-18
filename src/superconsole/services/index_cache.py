@@ -20,18 +20,20 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def save_games(cache_file: Path, roms_root: Path, games: list[Game]) -> None:
+def save_games(cache_file: Path, roms_root: Path, images_root: Path, games: list[Game]) -> None:
     cache_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Store paths RELATIVE to roms_root (portable)
     items: list[dict[str, Any]] = []
     for g in games:
+        cover_rel = _cover_path_rel(g.cover_path, images_root)
         items.append({
             "platform": g.platform,
             "title": g.title,
             "game_dir": str(g.game_dir.relative_to(roms_root)),
             "launch_target": str(g.launch_target.relative_to(roms_root)) if g.launch_target.is_absolute() else str(g.launch_target),
             "launch_is_dir": g.launch_target.is_dir(),
+            "cover_path": cover_rel,
         })
 
     payload = {
@@ -68,3 +70,12 @@ def load_games(cache_file: Path, roms_root: Path) -> list[dict[str, Any]] | None
     # If cache was generated from a different ROM root, still try to load it
     # (we store relative paths), but you can tighten this later if you want.
     return items
+
+
+def _cover_path_rel(cover_path: Path, images_root: Path) -> str:
+    if cover_path.is_absolute():
+        try:
+            return str(cover_path.relative_to(images_root))
+        except ValueError:
+            return str(cover_path)
+    return str(cover_path)
