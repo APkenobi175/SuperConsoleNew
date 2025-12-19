@@ -7,7 +7,10 @@
 * I have learned a lot since I wrote the original super console launcher, and I want to apply that knowledge to make a better version.
 * This new version will also be more modular and easier to maintain than the original version.
 
+## Requirements
+
+* AutoHotkey is required on Windows for the global exit hotkey (Ctrl+Shift+Q) to work.
+
 * Stay tuned for updates as I work on this new project!
 
 # End of README.md
-

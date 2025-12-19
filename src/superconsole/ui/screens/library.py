@@ -121,7 +121,7 @@ class LibraryScreen(Screen):
             header = SectionHeader("Search Results")
             self.sections.add_widget(header)
             if filtered:
-                self.sections.add_widget(build_game_grid(filtered))
+                self.sections.add_widget(build_game_grid(filtered, on_select=self._on_game_press))
             else:
                 empty = Label(
                     text="No matches.",
@@ -144,7 +144,13 @@ class LibraryScreen(Screen):
 
         header = SectionHeader("All Games")
         self.sections.add_widget(header)
-        self.sections.add_widget(build_game_grid(games))
+        self.sections.add_widget(build_game_grid(games, on_select=self._on_game_press))
+
+    def _on_game_press(self, game: dict[str, str]) -> None:
+        from kivy.app import App
+        app = App.get_running_app()
+        if hasattr(app, "launch_game"):
+            app.launch_game(game)
 
     def _on_scan_state(self, *_):
         if self.state.scan_in_progress:

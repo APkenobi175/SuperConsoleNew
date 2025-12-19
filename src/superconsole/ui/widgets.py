@@ -80,7 +80,7 @@ class TabButton(ButtonBehavior, BoxLayout):
 
 
 class GameCard(ButtonBehavior, BoxLayout):
-    def __init__(self, title: str, cover_source: str, **kwargs):
+    def __init__(self, title: str, cover_source: str, on_press=None, **kwargs):
         super().__init__(
             orientation="vertical",
             size_hint=(1, None),
@@ -89,6 +89,7 @@ class GameCard(ButtonBehavior, BoxLayout):
             spacing=6,
             **kwargs,
         )
+        self._on_press = on_press
         with self.canvas.before:
             self._bg_color = Color(*COLORS["card"])
             self._bg_rect = Rectangle(pos=self.pos, size=self.size)
@@ -125,6 +126,10 @@ class GameCard(ButtonBehavior, BoxLayout):
         self._bg_rect.pos = self.pos
         self._bg_rect.size = self.size
         self._border.rectangle = (self.x, self.y, self.width, self.height)
+
+    def on_press(self):
+        if self._on_press:
+            self._on_press()
 
 
 class SectionHeader(BoxLayout):
@@ -244,7 +249,7 @@ class LoadingOverlay(ModalView):
             self.dismiss()
 
 
-def build_game_grid(items: list[dict[str, str]], cols: int = 5) -> GridLayout:
+def build_game_grid(items: list[dict[str, str]], cols: int = 5, on_select=None) -> GridLayout:
     grid = GridLayout(
         cols=cols,
         spacing=12,
@@ -255,5 +260,8 @@ def build_game_grid(items: list[dict[str, str]], cols: int = 5) -> GridLayout:
     )
     grid.bind(minimum_height=grid.setter("height"))
     for item in items:
-        grid.add_widget(GameCard(item.get("title", ""), item.get("cover_path", "")))
+        handler = None
+        if on_select:
+            handler = lambda i=item: on_select(i)
+        grid.add_widget(GameCard(item.get("title", ""), item.get("cover_path", ""), on_press=handler))
     return grid

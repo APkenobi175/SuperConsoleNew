@@ -10,5 +10,5 @@ class AppState(EventDispatcher):
     scan_in_progress = BooleanProperty(False) # if a scan is in progress
     rom_count = NumericProperty(0) # how many ROMs are known
 
-    # List of dicts like {"title": str, "cover_path": str}
+    # List of dicts like {"title": str, "cover_path": str, "platform": str, "launch_target": str, "launch_type": str}
     roms = ListProperty([]) # list of roms
