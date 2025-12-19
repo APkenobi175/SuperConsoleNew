@@ -147,6 +147,55 @@ def list_games(
     return list(con.execute(q, params))
 
 
+def list_platforms(con: sqlite3.Connection) -> list[str]:
+    rows = con.execute(
+        "SELECT DISTINCT platform FROM games WHERE hidden = 0 ORDER BY platform COLLATE NOCASE"
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def list_favorites(con: sqlite3.Connection, limit: int = 20) -> list[sqlite3.Row]:
+    return list(
+        con.execute(
+            """
+            SELECT * FROM games
+            WHERE hidden = 0 AND favorite = 1
+            ORDER BY title COLLATE NOCASE
+            LIMIT ?
+            """,
+            (limit,),
+        )
+    )
+
+
+def list_recently_played(con: sqlite3.Connection, limit: int = 20) -> list[sqlite3.Row]:
+    return list(
+        con.execute(
+            """
+            SELECT * FROM games
+            WHERE hidden = 0 AND last_played IS NOT NULL
+            ORDER BY datetime(last_played) DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+    )
+
+
+def list_recently_added(con: sqlite3.Connection, limit: int = 20) -> list[sqlite3.Row]:
+    return list(
+        con.execute(
+            """
+            SELECT * FROM games
+            WHERE hidden = 0
+            ORDER BY datetime(date_added) DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+    )
+
+
 def set_favorite(con: sqlite3.Connection, game_id: int, is_fav: bool) -> None:
     con.execute("UPDATE games SET favorite = ? WHERE id = ?", (1 if is_fav else 0, game_id))
     con.commit()

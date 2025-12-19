@@ -6,6 +6,9 @@ from pathlib import Path
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
+from kivy.uix.popup import Popup
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
 from kivy.uix.screenmanager import ScreenManager, FadeTransition
 
 from ..state import AppState
@@ -15,7 +18,7 @@ from ..paths import ROMS_DIR, IMAGES_DIR, PROJECT_ROOT
 
 from .screens.home import HomeScreen
 from .screens.library import LibraryScreen
-from .widgets import LoadingOverlay
+from .widgets import LoadingOverlay, COLORS, apply_bg, HoverButton
 
 import time
 import subprocess
@@ -24,7 +27,17 @@ import logging
 from ..services.index_cache import cache_path, load_games, save_games
 from ..services.covers import find_cover  # uses your exact match version
 from ..core.models import Game
-from ..services.library_db import connect, init_db, list_games, update_cover_paths
+from ..services.library_db import (
+    connect,
+    init_db,
+    list_games,
+    list_platforms,
+    list_favorites,
+    list_recently_played,
+    list_recently_added,
+    update_cover_paths,
+    mark_played,
+)
 from ..services.library_sync import sync_library
 from ..services.game_launcher import launch_game, is_wsl, get_emulator_exe
 
@@ -46,10 +59,10 @@ class SuperConsoleApp(App):
         self._emulator_proc = None
         self._emulator_exe = None
         self._hotkey_proc = None
+        self._exit_popup = None
+        self._platform_cache = {}
 
-    def _prepare_db_state(self, con):
-        rows = list_games(con)
-        updates: list[tuple[int, str]] = []
+    def _hydrate_rows(self, rows, updates: dict[int, str]) -> list[dict[str, str]]:
         games = []
         for r in rows:
             cover_path = r["cover_path"]
@@ -61,30 +74,64 @@ class SuperConsoleApp(App):
                     PLACEHOLDER,
                 )
                 cover_path = self._resolve_cover_path(str(cover))
-                updates.append((r["id"], cover_path))
+                updates[r["id"]] = cover_path
             else:
                 cover_path = self._resolve_cover_path(cover_path)
             games.append({
+                "id": r["id"],
                 "title": r["title"],
                 "cover_path": cover_path,
                 "platform": r["platform"],
                 "launch_target": r["launch_target"],
                 "launch_type": r["launch_type"],
+                "favorite": r["favorite"],
+                "last_played": r["last_played"],
+                "date_added": r["date_added"],
             })
-        update_cover_paths(con, updates)
-        return len(rows), games
+        return games
 
-    def _apply_db_state(self, count: int, games: list[dict[str, str]]) -> None:
+    def _load_all_state(self, con):
+        updates: dict[int, str] = {}
+        rows = list_games(con)
+        games = self._hydrate_rows(rows, updates)
+        platforms = list_platforms(con)
+        favorites = self._hydrate_rows(list_favorites(con), updates)
+        recent_played = self._hydrate_rows(list_recently_played(con), updates)
+        recent_added = self._hydrate_rows(list_recently_added(con), updates)
+        platform_games = {}
+        for platform in platforms:
+            platform_games[platform] = self._hydrate_rows(list_games(con, platform=platform), updates)
+
+        if updates:
+            update_cover_paths(con, [(gid, path) for gid, path in updates.items()])
+
+        return len(rows), games, platforms, favorites, recent_played, recent_added, platform_games
+
+    def _apply_db_state(
+        self,
+        count: int,
+        games: list[dict[str, str]],
+        platforms: list[str],
+        favorites: list[dict[str, str]],
+        recent_played: list[dict[str, str]],
+        recent_added: list[dict[str, str]],
+        platform_games: dict[str, list[dict[str, str]]],
+    ) -> None:
         self.state.rom_count = count
         self.state.roms = games
+        self.state.platforms = platforms
+        self.state.favorites = favorites
+        self.state.recent_played = recent_played
+        self.state.recent_added = recent_added
+        self._platform_cache = platform_games
         set_status(self.state, f"Loaded DB ({count} ROMs)")
         if count == 0:
             set_status(self.state, "First run: building library...")
             self._rescan_to_db()
 
     def _load_from_db(self):
-        count, games = self._prepare_db_state(self.db)
-        self._apply_db_state(count, games)
+        count, games, platforms, favorites, recent_played, recent_added, platform_games = self._load_all_state(self.db)
+        self._apply_db_state(count, games, platforms, favorites, recent_played, recent_added, platform_games)
 
     def _load_from_db_async(self):
         log = logging.getLogger(__name__)
@@ -94,10 +141,10 @@ class SuperConsoleApp(App):
             init_db(con)
             error = None
             try:
-                count, games = self._prepare_db_state(con)
+                count, games, platforms, favorites, recent_played, recent_added, platform_games = self._load_all_state(con)
             except Exception as exc:
                 error = exc
-                count, games = 0, []
+                count, games, platforms, favorites, recent_played, recent_added, platform_games = 0, [], [], [], [], [], {}
             finally:
                 con.close()
 
@@ -106,7 +153,7 @@ class SuperConsoleApp(App):
                     log.exception("Failed to load DB", exc_info=error)
                     set_status(self.state, "Failed to load DB.")
                 else:
-                    self._apply_db_state(count, games)
+                    self._apply_db_state(count, games, platforms, favorites, recent_played, recent_added, platform_games)
                 if self._startup_overlay:
                     self._startup_overlay.hide()
 
@@ -119,19 +166,21 @@ class SuperConsoleApp(App):
     def build(self):
         Window.title = "SuperConsole (Ubuntu)" if is_wsl() else "SuperConsole"
         self.sm.add_widget(HomeScreen(self.state, on_rescan=self._rescan_to_db, name="home"))
-        self.sm.add_widget(LibraryScreen(self.state, name="library"))
+        self.sm.add_widget(LibraryScreen(self.state, name="platform"))
 
         log = logging.getLogger(__name__)
 
         # Route changes switch screens (like a router)
         self.state.bind(route=self._on_route)
         Window.bind(on_key_down=self._on_key_down)
+        Window.bind(on_request_close=self._on_request_close)
 
         # Show startup overlay and load DB in background
         self._startup_overlay = LoadingOverlay(text="Loading library...")
         Clock.schedule_once(lambda *_: self._startup_overlay.show(), 0)
         Clock.schedule_once(lambda *_: self._load_from_db_async(), 0)
         Clock.schedule_once(lambda *_: self._start_hotkey_helper(), 0)
+        Clock.schedule_once(lambda *_: self._maximize_window(), 0)
 
         # Do NOT auto-rescan on every startup
 
@@ -139,8 +188,15 @@ class SuperConsoleApp(App):
         return self.sm
 
     def _on_route(self, *_):
-        if self.state.route in self.sm.screen_names:
-            self.sm.current = self.state.route
+        route = self.state.route
+        if route.startswith("platform:"):
+            platform = route.split(":", 1)[1]
+            self.state.current_platform = platform
+            self._load_platform_games(platform)
+            self.sm.current = "platform"
+            return
+        if route in self.sm.screen_names:
+            self.sm.current = route
 
     def _load_cache_into_state(self) -> bool:
         import logging
@@ -176,7 +232,7 @@ class SuperConsoleApp(App):
         self.state.rom_count = len(games)
         set_status(self.state, f"Loaded cache ({len(games)} ROMs)")
 
-        log.info("Loaded ROM cache: %d entries", len(titles))
+        log.info("Loaded ROM cache: %d entries", len(games))
         return True
 
 
@@ -250,9 +306,19 @@ class SuperConsoleApp(App):
         import logging
         log = logging.getLogger(__name__)
         try:
-            if hasattr(Window, "minimize"):
+            if not is_wsl() and hasattr(Window, "minimize"):
                 Window.minimize()
             self._emulator_exe = get_emulator_exe(game["platform"])
+            if game.get("id"):
+                try:
+                    mark_played(self.db, game["id"])
+                    updates: dict[int, str] = {}
+                    recent_played = self._hydrate_rows(list_recently_played(self.db), updates)
+                    if updates:
+                        update_cover_paths(self.db, [(gid, path) for gid, path in updates.items()])
+                    self.state.recent_played = recent_played
+                except Exception:
+                    log.exception("Failed to mark played: %s", game.get("title", ""))
             proc = launch_game(game["platform"], game["launch_target"])
             self._emulator_proc = proc
             if not is_wsl() and proc is not None:
@@ -275,12 +341,72 @@ class SuperConsoleApp(App):
         except Exception:
             log.exception("Failed to launch game: %s", game.get("title", ""))
 
+    def _load_platform_games(self, platform: str) -> None:
+        if platform in self._platform_cache:
+            self.state.current_games = self._platform_cache[platform]
+            return
+
+        updates: dict[int, str] = {}
+        rows = list_games(self.db, platform=platform)
+        games = self._hydrate_rows(rows, updates)
+        if updates:
+            update_cover_paths(self.db, [(gid, path) for gid, path in updates.items()])
+        self._platform_cache[platform] = games
+        self.state.current_games = games
+
     def _on_key_down(self, _window, keycode, _scancode, _codepoint, modifiers):
         key_name = keycode[1] if isinstance(keycode, tuple) else keycode
+        if key_name in {"escape", "esc"}:
+            self._confirm_exit()
+            return True
         if "ctrl" in modifiers and key_name in {"escape", "esc"}:
             self._terminate_emulator()
             return True
         return False
+
+    def _confirm_exit(self) -> None:
+        if self._exit_popup and self._exit_popup.parent:
+            return
+        content = BoxLayout(orientation="vertical", padding=12, spacing=10)
+        apply_bg(content, COLORS["panel"])
+        content.add_widget(Label(text="Are you sure you want to exit?", color=(1, 1, 1, 1)))
+        buttons = BoxLayout(size_hint_y=None, height=44, spacing=10)
+        btn_cancel = HoverButton(
+            text="Cancel",
+            background_color=(0.2, 0.3, 0.4, 1),
+            color=(1, 1, 1, 1),
+            base_color=(0.2, 0.3, 0.4, 1),
+            hover_color=(0.26, 0.38, 0.5, 1),
+        )
+        btn_exit = HoverButton(
+            text="Exit",
+            background_color=(0.75, 0.2, 0.2, 1),
+            color=(1, 1, 1, 1),
+            base_color=(0.75, 0.2, 0.2, 1),
+            hover_color=(0.85, 0.28, 0.28, 1),
+        )
+        buttons.add_widget(btn_cancel)
+        buttons.add_widget(btn_exit)
+        content.add_widget(buttons)
+
+        popup = Popup(
+            title="Exit",
+            content=content,
+            size_hint=(None, None),
+            size=(360, 180),
+            auto_dismiss=False,
+            background="",
+            background_color=(0, 0, 0, 0.65),
+        )
+
+        btn_cancel.bind(on_press=lambda *_: popup.dismiss())
+        btn_exit.bind(on_press=lambda *_: (popup.dismiss(), self.stop()))
+        self._exit_popup = popup
+        popup.open()
+
+    def _on_request_close(self, *_args, **_kwargs):
+        self._confirm_exit()
+        return True
 
     def _terminate_emulator(self) -> None:
         import logging
@@ -375,6 +501,12 @@ class SuperConsoleApp(App):
             return result.stdout.strip()
         except Exception:
             return None
+
+    def _maximize_window(self) -> None:
+        try:
+            Window.fullscreen = "auto"
+        except Exception:
+            pass
 
     def _rescan_to_db(self, force: bool = False):
         if self.state.scan_in_progress:

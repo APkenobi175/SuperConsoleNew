@@ -4,18 +4,18 @@ import logging
 from kivy.uix.screenmanager import Screen
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
-from kivy.uix.button import Button
 from kivy.uix.scrollview import ScrollView
+from kivy.graphics import Color, Line
 
 from ...actions import set_route
 from ..widgets import (
     COLORS,
     apply_bg,
-    TabButton,
     SectionHeader,
     SearchInput,
     LoadingOverlay,
     build_game_grid,
+    HoverButton,
 )
 
 class LibraryScreen(Screen):
@@ -24,13 +24,14 @@ class LibraryScreen(Screen):
         self.state = state
         self._search_text = ""
         self.log = logging.getLogger(__name__)
+        self.nav_bar = None
 
         root = BoxLayout(orientation="vertical", padding=16, spacing=10)
         apply_bg(root, COLORS["bg"])
 
         header = BoxLayout(size_hint_y=None, height=44, padding=[10, 6], spacing=8)
         apply_bg(header, COLORS["panel"])
-        title = Label(
+        self.title = Label(
             text="Library",
             font_size="20sp",
             color=COLORS["text"],
@@ -38,7 +39,7 @@ class LibraryScreen(Screen):
             halign="left",
             valign="middle",
         )
-        title.bind(size=title.setter("text_size"))
+        self.title.bind(size=self.title.setter("text_size"))
         self.count = Label(
             text="0 games",
             font_size="12sp",
@@ -47,17 +48,28 @@ class LibraryScreen(Screen):
             valign="middle",
         )
         self.count.bind(size=self.count.setter("text_size"))
-        header.add_widget(title)
+        header.add_widget(self.title)
         header.add_widget(self.count)
 
-        tab_bar = BoxLayout(size_hint_y=None, height=46, padding=[6, 6], spacing=8)
-        apply_bg(tab_bar, COLORS["panel_alt"])
-        home_btn = TabButton("Home")
-        home_btn.bind(on_release=lambda *_: self._log_and_route("Home", "home"))
-        lib_btn = TabButton("Library")
-        lib_btn.set_active(True)
-        tab_bar.add_widget(home_btn)
-        tab_bar.add_widget(lib_btn)
+        nav_frame = BoxLayout(size_hint_y=None, height=48, padding=[6, 6])
+        apply_bg(nav_frame, COLORS["panel_alt"])
+        with nav_frame.canvas.after:
+            Color(*COLORS["border"])
+            self._nav_line = Line(points=[nav_frame.x, nav_frame.y, nav_frame.right, nav_frame.y], width=1.0)
+        nav_frame.bind(
+            pos=lambda *_: self._sync_nav_line(nav_frame),
+            size=lambda *_: self._sync_nav_line(nav_frame),
+        )
+
+        nav_scroll = ScrollView(size_hint_y=None, height=44, do_scroll_y=False)
+        nav_scroll.bar_width = 6
+        nav_scroll.bar_color = (*COLORS["accent"][:3], 0.6)
+        nav_scroll.bar_inactive_color = (*COLORS["accent"][:3], 0.2)
+        self.nav_bar = BoxLayout(size_hint=(None, 1), spacing=8, padding=[2, 2])
+        self.nav_bar.bind(minimum_width=self.nav_bar.setter("width"))
+        nav_scroll.add_widget(self.nav_bar)
+        nav_frame.add_widget(nav_scroll)
+        self._rebuild_nav()
 
         search_bar = BoxLayout(size_hint_y=None, height=42, padding=[8, 6], spacing=8)
         apply_bg(search_bar, COLORS["panel"])
@@ -81,28 +93,20 @@ class LibraryScreen(Screen):
         self.sections.bind(minimum_height=self.sections.setter("height"))
         self.scroll.add_widget(self.sections)
 
-        back = Button(
-            text="Back",
-            size_hint=(None, 1),
-            width=120,
-            background_normal="",
-            background_color=COLORS["panel_alt"],
-            color=COLORS["text"],
-        )
-        back.bind(on_press=lambda *_: self._log_and_route("Back", "home"))
-
         root.add_widget(header)
-        root.add_widget(tab_bar)
+        root.add_widget(nav_frame)
         root.add_widget(search_bar)
         root.add_widget(self.scroll)
-        root.add_widget(back)
         self.add_widget(root)
         self.overlay = LoadingOverlay()
 
-        self.state.bind(roms=self._rebuild_sections)
+        self.state.bind(current_games=self._rebuild_sections)
+        self.state.bind(current_platform=self._update_title)
+        self.state.bind(platforms=self._rebuild_nav)
         self.state.bind(scan_in_progress=self._on_scan_state)
         self._on_scan_state()
         self._rebuild_sections()
+        self._update_title()
 
     def _on_search(self, _instance, value):
         self._search_text = value.strip()
@@ -110,7 +114,7 @@ class LibraryScreen(Screen):
 
     def _rebuild_sections(self, *_):
         self.sections.clear_widgets()
-        games = list(self.state.roms)
+        games = list(self.state.current_games)
         self.count.text = f"{len(games)} games"
 
         if self._search_text:
@@ -161,3 +165,39 @@ class LibraryScreen(Screen):
     def _log_and_route(self, button_name: str, route: str) -> None:
         self.log.info("%s button pressed", button_name)
         set_route(self.state, route)
+
+    def _update_title(self, *_):
+        platform = self.state.current_platform or "Library"
+        self.title.text = platform.upper()
+
+    def _rebuild_nav(self, *_):
+        if not self.nav_bar:
+            return
+        self.nav_bar.clear_widgets()
+
+        home_btn = HoverButton(
+            text="Home",
+            size_hint=(None, 1),
+            width=110,
+            color=COLORS["text"],
+            base_color=COLORS["panel"],
+            hover_color=COLORS["tab_active"],
+        )
+        home_btn.bind(on_press=lambda *_: self._log_and_route("Home", "home"))
+        self.nav_bar.add_widget(home_btn)
+
+        for platform in self.state.platforms:
+            is_active = platform == self.state.current_platform
+            btn = HoverButton(
+                text=platform.title(),
+                size_hint=(None, 1),
+                width=110,
+                color=COLORS["text"],
+                base_color=COLORS["accent"] if is_active else COLORS["panel"],
+                hover_color=COLORS["tab_active"],
+            )
+            btn.bind(on_press=lambda _b, p=platform: self._log_and_route(p, f"platform:{p}"))
+            self.nav_bar.add_widget(btn)
+
+    def _sync_nav_line(self, nav_frame):
+        self._nav_line.points = [nav_frame.x, nav_frame.y, nav_frame.right, nav_frame.y]

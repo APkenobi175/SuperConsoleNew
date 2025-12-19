@@ -1,6 +1,7 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 SetTitleMatchMode 2
+DetectHiddenWindows True
 
 ^+q:: {
     try ProcessClose("Dolphin.exe")
@@ -16,16 +17,13 @@ SetTitleMatchMode 2
     try ProcessClose("mgba-sdl.exe")
     try ProcessClose("Mesen.exe")
     try ProcessClose("bsnes.exe")
-    if WinExist("SuperConsole (Ubuntu)")
+    ; WSL: only kill emulators. Restoring launcher focus is flaky there.
+    if WinExist("SuperConsole")
     {
-        try WinRestore("SuperConsole (Ubuntu)")
-        try WinActivate("SuperConsole (Ubuntu)")
-        try WinMaximize("SuperConsole (Ubuntu)")
-    }
-    else if WinExist("SuperConsole")
-    {
+        try WinShow("SuperConsole")
         try WinRestore("SuperConsole")
         try WinActivate("SuperConsole")
+        try WinWaitActive("SuperConsole",, 2)
         try WinMaximize("SuperConsole")
     }
 }

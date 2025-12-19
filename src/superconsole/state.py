@@ -10,5 +10,12 @@ class AppState(EventDispatcher):
     scan_in_progress = BooleanProperty(False) # if a scan is in progress
     rom_count = NumericProperty(0) # how many ROMs are known
 
-    # List of dicts like {"title": str, "cover_path": str, "platform": str, "launch_target": str, "launch_type": str}
+    # List of dicts like {"id": int, "title": str, "cover_path": str, "platform": str, "launch_target": str, "launch_type": str}
     roms = ListProperty([]) # list of roms
+
+    platforms = ListProperty([]) # available platforms
+    current_platform = StringProperty("") # current platform view
+    current_games = ListProperty([]) # games for current platform
+    favorites = ListProperty([])
+    recent_played = ListProperty([])
+    recent_added = ListProperty([])

@@ -12,22 +12,24 @@ from kivy.uix.widget import Widget
 from kivy.animation import Animation
 from kivy.properties import NumericProperty
 from kivy.uix.modalview import ModalView
+from kivy.uix.button import Button
+from kivy.core.window import Window
 
 
 CARD_HEIGHT = 230
 
 COLORS = {
-    "bg": get_color_from_hex("#1b2838"),
-    "panel": get_color_from_hex("#22344a"),
-    "panel_alt": get_color_from_hex("#2a475e"),
-    "tab_idle": get_color_from_hex("#1f2e3d"),
-    "tab_active": get_color_from_hex("#2a475e"),
-    "card": get_color_from_hex("#22354a"),
-    "cover": get_color_from_hex("#2f4f67"),
-    "border": get_color_from_hex("#31495e"),
-    "text": get_color_from_hex("#ffffff"),
-    "muted": get_color_from_hex("#a7b2bf"),
-    "accent": get_color_from_hex("#3a6ea5"),
+    "bg": get_color_from_hex("#0f172a"),
+    "panel": get_color_from_hex("#111c2f"),
+    "panel_alt": get_color_from_hex("#16233b"),
+    "tab_idle": get_color_from_hex("#1b2a45"),
+    "tab_active": get_color_from_hex("#2563eb"),
+    "card": get_color_from_hex("#15233c"),
+    "cover": get_color_from_hex("#0b1324"),
+    "border": get_color_from_hex("#243b5a"),
+    "text": get_color_from_hex("#f8fafc"),
+    "muted": get_color_from_hex("#94a3b8"),
+    "accent": get_color_from_hex("#3b82f6"),
 }
 
 
@@ -121,6 +123,7 @@ class GameCard(ButtonBehavior, BoxLayout):
         self.add_widget(self.cover)
         self.add_widget(self.title)
         self.bind(pos=self._sync_canvas, size=self._sync_canvas)
+        Window.bind(mouse_pos=self._on_mouse_pos)
 
     def _sync_canvas(self, *_):
         self._bg_rect.pos = self.pos
@@ -130,6 +133,12 @@ class GameCard(ButtonBehavior, BoxLayout):
     def on_press(self):
         if self._on_press:
             self._on_press()
+
+    def _on_mouse_pos(self, _window, pos):
+        if not self.get_root_window():
+            return
+        inside = self.collide_point(*self.to_widget(*pos))
+        self._bg_color.rgba = COLORS["panel_alt"] if inside else COLORS["card"]
 
 
 class SectionHeader(BoxLayout):
@@ -265,3 +274,19 @@ def build_game_grid(items: list[dict[str, str]], cols: int = 5, on_select=None) 
             handler = lambda i=item: on_select(i)
         grid.add_widget(GameCard(item.get("title", ""), item.get("cover_path", ""), on_press=handler))
     return grid
+
+
+class HoverButton(Button):
+    def __init__(self, base_color, hover_color, **kwargs):
+        super().__init__(**kwargs)
+        self._base_color = base_color
+        self._hover_color = hover_color
+        self.background_normal = ""
+        self.background_color = base_color
+        Window.bind(mouse_pos=self._on_mouse_pos)
+
+    def _on_mouse_pos(self, _window, pos):
+        if not self.get_root_window():
+            return
+        inside = self.collide_point(*self.to_widget(*pos))
+        self.background_color = self._hover_color if inside else self._base_color
